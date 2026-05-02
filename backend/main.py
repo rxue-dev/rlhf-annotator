@@ -70,6 +70,25 @@ def get_next_pair(annotator_id: str = Query(...)):
     }
 
 
+@app.get("/pairs/{pair_id}")
+def get_pair(pair_id: int):
+    conn = get_connection()
+    row = conn.execute("SELECT * FROM prompt_pairs WHERE id = ?", (pair_id,)).fetchone()
+    conn.close()
+    if row is None:
+        return {"pair": None}
+    return {
+        "pair": {
+            "id": row["id"],
+            "prompt": row["prompt"],
+            "response_a": row["response_a"],
+            "response_b": row["response_b"],
+            "model_a": row["model_a"],
+            "model_b": row["model_b"],
+        }
+    }
+
+
 @app.post("/annotations")
 def create_annotation(req: AnnotationRequest):
     conn = get_connection()

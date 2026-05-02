@@ -21,6 +21,12 @@ export async function fetchNextPair(annotatorId: string): Promise<PromptPair | n
   return data.pair;
 }
 
+export async function fetchPairById(pairId: number): Promise<PromptPair | null> {
+  const res = await fetch(`${BASE}/pairs/${pairId}`);
+  const data = await res.json();
+  return data.pair;
+}
+
 export async function submitAnnotation(body: {
   pair_id: number;
   annotator_id: string;

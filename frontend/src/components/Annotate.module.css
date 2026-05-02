@@ -21,9 +21,14 @@
   font-size: 0.85rem;
 }
 
-.navButton:hover {
+.navButton:hover:not(:disabled) {
   background: var(--surface-hover);
   color: var(--text);
+}
+
+.navButton:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
 }
 
 .annotator {

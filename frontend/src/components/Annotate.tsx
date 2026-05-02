@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
-import { fetchNextPair, submitAnnotation, fetchStats, PromptPair } from "../api";
+import type { PromptPair } from "../api";
+import { fetchNextPair, fetchPairById, submitAnnotation, fetchStats } from "../api";
 import styles from "./Annotate.module.css";
 
 interface Props {
@@ -21,23 +22,47 @@ export default function Annotate({ annotatorId, onShowStats, onLogout }: Props) 
   // This counters position bias — annotators tend to prefer whichever response appears first.
   const [showAAsA, setShowAAsA] = useState(true);
 
+  // Why: Track history so annotators can revisit previous pairs to review their decisions
+  const [history, setHistory] = useState<number[]>([]);
+  const [viewingHistory, setViewingHistory] = useState(false);
+
+  const loadStats = useCallback(async () => {
+    const stats = await fetchStats();
+    setTotal(stats.total_pairs);
+    const mine = stats.per_annotator.find((a) => a.annotator_id === annotatorId);
+    setCompleted(mine?.count ?? 0);
+  }, [annotatorId]);
+
   const loadNext = useCallback(async () => {
     setLoading(true);
     setChoice(null);
     setRationale("");
     setShowAAsA(Math.random() >= 0.5);
+    setViewingHistory(false);
 
-    const [nextPair, stats] = await Promise.all([
+    const [nextPair] = await Promise.all([
       fetchNextPair(annotatorId),
-      fetchStats(),
+      loadStats(),
     ]);
 
     setPair(nextPair);
-    setTotal(stats.total_pairs);
-    const mine = stats.per_annotator.find((a) => a.annotator_id === annotatorId);
-    setCompleted(mine?.count ?? 0);
     setLoading(false);
-  }, [annotatorId]);
+  }, [annotatorId, loadStats]);
+
+  const goBack = useCallback(async () => {
+    if (history.length === 0) return;
+    setLoading(true);
+    setChoice(null);
+    setRationale("");
+    setShowAAsA(Math.random() >= 0.5);
+    setViewingHistory(true);
+
+    const prevId = history[history.length - 1];
+    const prevPair = await fetchPairById(prevId);
+    setPair(prevPair);
+    setHistory((h) => h.slice(0, -1));
+    setLoading(false);
+  }, [history]);
 
   useEffect(() => {
     loadNext();
@@ -77,6 +102,7 @@ export default function Annotate({ annotatorId, onShowStats, onLogout }: Props) 
       response_a_shown_as: showAAsA ? "A" : "B",
     });
 
+    setHistory((h) => [...h, pair.id]);
     setSubmitting(false);
     loadNext();
   }
@@ -104,6 +130,9 @@ export default function Annotate({ annotatorId, onShowStats, onLogout }: Props) 
       <div className={styles.header}>
         <span className={styles.annotator}>Annotator: {annotatorId}</span>
         <div className={styles.nav}>
+          <button className={styles.navButton} onClick={goBack} disabled={history.length === 0} title="Go back to previous pair">
+            &#8592; Back
+          </button>
           <button className={styles.navButton} onClick={onShowStats}>Stats</button>
           <button className={styles.navButton} onClick={onLogout}>Logout</button>
         </div>
@@ -163,13 +192,19 @@ export default function Annotate({ annotatorId, onShowStats, onLogout }: Props) 
       />
 
       <div className={styles.submitRow}>
-        <button
-          className={styles.submitBtn}
-          disabled={!choice || submitting}
-          onClick={handleSubmit}
-        >
-          {submitting ? "Submitting..." : "Submit"}
-        </button>
+        {viewingHistory ? (
+          <button className={styles.submitBtn} onClick={loadNext}>
+            Next &#8594;
+          </button>
+        ) : (
+          <button
+            className={styles.submitBtn}
+            disabled={!choice || submitting}
+            onClick={handleSubmit}
+          >
+            {submitting ? "Submitting..." : "Submit"}
+          </button>
+        )}
       </div>
     </div>
   );

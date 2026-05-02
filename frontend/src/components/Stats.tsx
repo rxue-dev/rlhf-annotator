@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
-import { fetchStats, Stats as StatsData } from "../api";
+import type { Stats as StatsData } from "../api";
+import { fetchStats } from "../api";
 import styles from "./Stats.module.css";
 
 interface Props {
