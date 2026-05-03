@@ -70,6 +70,45 @@ def get_next_pair(annotator_id: str = Query(...)):
     }
 
 
+@app.get("/pairs/all")
+def get_all_pairs():
+    conn = get_connection()
+    rows = conn.execute("SELECT * FROM prompt_pairs ORDER BY id ASC").fetchall()
+    conn.close()
+    return {
+        "pairs": [
+            {
+                "id": r["id"],
+                "prompt": r["prompt"],
+                "response_a": r["response_a"],
+                "response_b": r["response_b"],
+                "model_a": r["model_a"],
+                "model_b": r["model_b"],
+            }
+            for r in rows
+        ]
+    }
+
+
+@app.get("/pairs/{pair_id}")
+def get_pair(pair_id: int):
+    conn = get_connection()
+    row = conn.execute("SELECT * FROM prompt_pairs WHERE id = ?", (pair_id,)).fetchone()
+    conn.close()
+    if row is None:
+        return {"pair": None}
+    return {
+        "pair": {
+            "id": row["id"],
+            "prompt": row["prompt"],
+            "response_a": row["response_a"],
+            "response_b": row["response_b"],
+            "model_a": row["model_a"],
+            "model_b": row["model_b"],
+        }
+    }
+
+
 @app.post("/annotations")
 def create_annotation(req: AnnotationRequest):
     conn = get_connection()
@@ -94,6 +133,39 @@ def create_annotation(req: AnnotationRequest):
     conn.close()
 
     return {"status": "created", "id": annotation_id}
+
+
+@app.put("/annotations")
+def update_annotation(req: AnnotationRequest):
+    conn = get_connection()
+    now = datetime.now(timezone.utc).isoformat()
+    conn.execute(
+        """UPDATE annotations SET preferred = ?, rationale = ?, response_a_shown_as = ?, created_at = ?
+           WHERE pair_id = ? AND annotator_id = ?""",
+        (req.preferred, req.rationale, req.response_a_shown_as, now, req.pair_id, req.annotator_id),
+    )
+    conn.commit()
+    conn.close()
+    return {"status": "updated"}
+
+
+@app.get("/annotations/for-pair")
+def get_annotation_for_pair(pair_id: int = Query(...), annotator_id: str = Query(...)):
+    conn = get_connection()
+    row = conn.execute(
+        "SELECT preferred, rationale, response_a_shown_as FROM annotations WHERE pair_id = ? AND annotator_id = ?",
+        (pair_id, annotator_id),
+    ).fetchone()
+    conn.close()
+    if row is None:
+        return {"annotation": None}
+    return {
+        "annotation": {
+            "preferred": row["preferred"],
+            "rationale": row["rationale"],
+            "response_a_shown_as": row["response_a_shown_as"],
+        }
+    }
 
 
 @app.get("/stats")
@@ -146,16 +218,24 @@ def export_annotations():
             chosen, rejected = row["response_a"], row["response_b"]
             chosen_model, rejected_model = row["model_a"], row["model_b"]
 
+        shown_as = row["response_a_shown_as"]
+        if row["preferred"] == "tie":
+            annotator_choice = "tie"
+        elif row["preferred"] == "response_a":
+            annotator_choice = shown_as
+        else:
+            annotator_choice = "B" if shown_as == "A" else "A"
+
         record = {
             "prompt": row["prompt"],
             "chosen": chosen,
             "rejected": rejected,
+            "annotator_choice": annotator_choice,
             "chosen_model": chosen_model,
             "rejected_model": rejected_model,
             "is_tie": row["preferred"] == "tie",
             "annotator_id": row["annotator_id"],
             "rationale": row["rationale"],
-            "response_a_shown_as": row["response_a_shown_as"],
             "created_at": row["created_at"],
         }
         buffer.write(json.dumps(record) + "\n")
