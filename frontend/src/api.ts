@@ -84,3 +84,22 @@ export async function fetchStats(): Promise<Stats> {
   const res = await fetch(`${BASE}/stats`);
   return res.json();
 }
+
+export async function generatePairs(body: {
+  api_key: string;
+  topic: string;
+  count: number;
+}): Promise<{ status: string; created?: number; message?: string }> {
+  const res = await fetch(`${BASE}/pairs/generate`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  return res.json();
+}
+
+export async function resetSession(annotatorId: string): Promise<void> {
+  await fetch(`${BASE}/sessions/reset?annotator_id=${encodeURIComponent(annotatorId)}`, {
+    method: "POST",
+  });
+}

@@ -2,8 +2,9 @@ import { useState } from "react";
 import Login from "./components/Login";
 import Annotate from "./components/Annotate";
 import Stats from "./components/Stats";
+import Generate from "./components/Generate";
 
-type Page = "annotate" | "stats";
+type Page = "annotate" | "stats" | "generate";
 
 const STORAGE_KEY = "rlhf_annotator_id";
 
@@ -32,10 +33,21 @@ export default function App() {
     return <Stats onBack={() => setPage("annotate")} />;
   }
 
+  if (page === "generate") {
+    return (
+      <Generate
+        annotatorId={annotatorId}
+        onDone={() => setPage("annotate")}
+        onBack={() => setPage("annotate")}
+      />
+    );
+  }
+
   return (
     <Annotate
       annotatorId={annotatorId}
       onShowStats={() => setPage("stats")}
+      onGenerate={() => setPage("generate")}
       onLogout={handleLogout}
     />
   );

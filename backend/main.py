@@ -8,6 +8,7 @@ import json
 import io
 
 from database import get_connection, init_db
+from generate import generate_and_store
 
 app = FastAPI(title="RLHF Annotation Tool")
 
@@ -25,6 +26,12 @@ class AnnotationRequest(BaseModel):
     preferred: str  # "response_a", "response_b", or "tie"
     rationale: Optional[str] = None
     response_a_shown_as: str  # "A" or "B"
+
+
+class GenerateRequest(BaseModel):
+    api_key: str
+    topic: str
+    count: int = 5
 
 
 @app.on_event("startup")
@@ -185,6 +192,24 @@ def get_stats():
         "annotated_pairs": annotated,
         "per_annotator": [{"annotator_id": r["annotator_id"], "count": r["count"]} for r in per_annotator],
     }
+
+
+@app.post("/pairs/generate")
+def generate_pairs(req: GenerateRequest):
+    try:
+        created = generate_and_store(req.api_key, req.topic, req.count)
+        return {"status": "ok", "created": created}
+    except RuntimeError as e:
+        return {"status": "error", "message": str(e)}
+
+
+@app.post("/sessions/reset")
+def reset_session(annotator_id: str = Query(...)):
+    conn = get_connection()
+    conn.execute("DELETE FROM annotations WHERE annotator_id = ?", (annotator_id,))
+    conn.commit()
+    conn.close()
+    return {"status": "ok"}
 
 
 @app.get("/export")

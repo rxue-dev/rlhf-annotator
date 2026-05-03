@@ -6,6 +6,7 @@ import styles from "./Annotate.module.css";
 interface Props {
   annotatorId: string;
   onShowStats: () => void;
+  onGenerate: () => void;
   onLogout: () => void;
 }
 
@@ -15,7 +16,7 @@ interface Result {
   showAAsA: boolean;
 }
 
-export default function Annotate({ annotatorId, onShowStats, onLogout }: Props) {
+export default function Annotate({ annotatorId, onShowStats, onGenerate, onLogout }: Props) {
   const [pairs, setPairs] = useState<PromptPair[]>([]);
   const [results, setResults] = useState<(Result | null)[]>([]);
   const [index, setIndex] = useState(0);
@@ -169,6 +170,9 @@ export default function Annotate({ annotatorId, onShowStats, onLogout }: Props) 
               &#8592; Review Answers
             </button>
           )}
+          <button className={styles.navButton} onClick={onGenerate}>
+            Generate New Pairs
+          </button>
           <button className={styles.navButton} onClick={onShowStats}>
             View Stats
           </button>
@@ -186,6 +190,7 @@ export default function Annotate({ annotatorId, onShowStats, onLogout }: Props) 
       <div className={styles.header}>
         <span className={styles.annotator}>Annotator: {annotatorId}</span>
         <div className={styles.nav}>
+          <button className={styles.navButton} onClick={onGenerate}>Generate</button>
           <button className={styles.navButton} onClick={onShowStats}>Stats</button>
           <button className={styles.navButton} onClick={onLogout}>Logout</button>
         </div>
