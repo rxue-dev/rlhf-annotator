@@ -170,6 +170,21 @@ export default function Annotate({ annotatorId, onShowStats, onGenerate, onLogou
               &#8592; Review Answers
             </button>
           )}
+          <button className={styles.navButton} onClick={() => {
+            setIndex(0);
+            const first = results[0];
+            if (first) {
+              setShowAAsA(first.showAAsA);
+              setChoice(displayChoice(first.preferred, first.showAAsA));
+              setRationale(first.rationale);
+            } else {
+              setShowAAsA(true);
+              setChoice(null);
+              setRationale("");
+            }
+          }}>
+            Redo Annotations
+          </button>
           <button className={styles.navButton} onClick={onGenerate}>
             Generate New Pairs
           </button>
