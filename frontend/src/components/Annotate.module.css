@@ -185,6 +185,8 @@
 .submitRow {
   display: flex;
   justify-content: center;
+  gap: 0.75rem;
+  align-items: center;
 }
 
 .submitBtn {
@@ -211,6 +213,13 @@
 .doneTitle {
   font-size: 1.5rem;
   margin-bottom: 0.75rem;
+}
+
+.doneActions {
+  display: flex;
+  gap: 0.75rem;
+  justify-content: center;
+  margin-top: 1.25rem;
 }
 
 .loading {

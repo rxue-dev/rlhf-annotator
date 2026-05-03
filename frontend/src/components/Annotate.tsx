@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import type { PromptPair } from "../api";
-import { fetchNextPair, fetchPairById, submitAnnotation, fetchStats } from "../api";
+import { fetchAllPairs, submitAnnotation, updateAnnotation, fetchStats } from "../api";
 import styles from "./Annotate.module.css";
 
 interface Props {
@@ -9,64 +9,137 @@ interface Props {
   onLogout: () => void;
 }
 
+interface Result {
+  preferred: string;     // "response_a" | "response_b" | "tie"
+  rationale: string;
+  showAAsA: boolean;
+}
+
 export default function Annotate({ annotatorId, onShowStats, onLogout }: Props) {
-  const [pair, setPair] = useState<PromptPair | null>(null);
+  const [pairs, setPairs] = useState<PromptPair[]>([]);
+  const [results, setResults] = useState<(Result | null)[]>([]);
+  const [index, setIndex] = useState(0);
   const [loading, setLoading] = useState(true);
+
+  // Why: Position randomization is decided once per pair and stored in the result,
+  // so it stays consistent across back/forward navigation.
+  const [showAAsA, setShowAAsA] = useState(true);
   const [choice, setChoice] = useState<string | null>(null);
   const [rationale, setRationale] = useState("");
-  const [total, setTotal] = useState(0);
-  const [completed, setCompleted] = useState(0);
-  const [submitting, setSubmitting] = useState(false);
-
-  // Why: Randomize which underlying response maps to label "A" vs "B" per pair.
-  // This counters position bias — annotators tend to prefer whichever response appears first.
-  const [showAAsA, setShowAAsA] = useState(true);
-
-  // Why: Track history so annotators can revisit previous pairs to review their decisions
-  const [history, setHistory] = useState<number[]>([]);
-  const [viewingHistory, setViewingHistory] = useState(false);
-
-  const loadStats = useCallback(async () => {
-    const stats = await fetchStats();
-    setTotal(stats.total_pairs);
-    const mine = stats.per_annotator.find((a) => a.annotator_id === annotatorId);
-    setCompleted(mine?.count ?? 0);
-  }, [annotatorId]);
-
-  const loadNext = useCallback(async () => {
-    setLoading(true);
-    setChoice(null);
-    setRationale("");
-    setShowAAsA(Math.random() >= 0.5);
-    setViewingHistory(false);
-
-    const [nextPair] = await Promise.all([
-      fetchNextPair(annotatorId),
-      loadStats(),
-    ]);
-
-    setPair(nextPair);
-    setLoading(false);
-  }, [annotatorId, loadStats]);
-
-  const goBack = useCallback(async () => {
-    if (history.length === 0) return;
-    setLoading(true);
-    setChoice(null);
-    setRationale("");
-    setShowAAsA(Math.random() >= 0.5);
-    setViewingHistory(true);
-
-    const prevId = history[history.length - 1];
-    const prevPair = await fetchPairById(prevId);
-    setPair(prevPair);
-    setHistory((h) => h.slice(0, -1));
-    setLoading(false);
-  }, [history]);
 
   useEffect(() => {
-    loadNext();
-  }, [loadNext]);
+    (async () => {
+      const allPairs = await fetchAllPairs();
+      const stats = await fetchStats();
+      const mine = stats.per_annotator.find((a) => a.annotator_id === annotatorId);
+      const completedCount = mine?.count ?? 0;
+
+      setPairs(allPairs);
+      setResults(new Array(allPairs.length).fill(null));
+      setIndex(completedCount);
+      setShowAAsA(true);
+      setLoading(false);
+    })();
+  }, [annotatorId]);
+
+  const displayChoice = useCallback((preferred: string, flipA: boolean): string | null => {
+    if (preferred === "tie") return "tie";
+    if (preferred === "response_a") return flipA ? "A" : "B";
+    return flipA ? "B" : "A";
+  }, []);
+
+  const toPreferred = useCallback((ch: string, flipA: boolean): string => {
+    if (ch === "tie") return "tie";
+    if (ch === "A") return flipA ? "response_a" : "response_b";
+    return flipA ? "response_b" : "response_a";
+  }, []);
+
+  function saveToResults(preferred: string, rat: string, flip: boolean) {
+    setResults((prev) => {
+      const copy = [...prev];
+      copy[index] = { preferred, rationale: rat, showAAsA: flip };
+      return copy;
+    });
+  }
+
+  async function handleNext() {
+    if (!choice) return;
+
+    const pair = pairs[index];
+    const preferred = toPreferred(choice, showAAsA);
+    const existing = results[index];
+
+    saveToResults(preferred, rationale, showAAsA);
+
+    if (existing) {
+      await updateAnnotation({
+        pair_id: pair.id,
+        annotator_id: annotatorId,
+        preferred,
+        rationale: rationale.trim() || null,
+        response_a_shown_as: showAAsA ? "A" : "B",
+      });
+    } else {
+      await submitAnnotation({
+        pair_id: pair.id,
+        annotator_id: annotatorId,
+        preferred,
+        rationale: rationale.trim() || null,
+        response_a_shown_as: showAAsA ? "A" : "B",
+      });
+    }
+
+    const nextIdx = index + 1;
+    setIndex(nextIdx);
+
+    if (nextIdx < pairs.length) {
+      const nextResult = results[nextIdx];
+      if (nextResult) {
+        setShowAAsA(nextResult.showAAsA);
+        setChoice(displayChoice(nextResult.preferred, nextResult.showAAsA));
+        setRationale(nextResult.rationale);
+      } else {
+        setShowAAsA(true);
+        setChoice(null);
+        setRationale("");
+      }
+    }
+  }
+
+  async function handleBack() {
+    if (index <= 0) return;
+
+    if (choice) {
+      const pair = pairs[index];
+      const preferred = toPreferred(choice, showAAsA);
+      const existing = results[index];
+      saveToResults(preferred, rationale, showAAsA);
+
+      if (existing) {
+        await updateAnnotation({
+          pair_id: pair.id,
+          annotator_id: annotatorId,
+          preferred,
+          rationale: rationale.trim() || null,
+          response_a_shown_as: showAAsA ? "A" : "B",
+        });
+      }
+    }
+
+    const prevIdx = index - 1;
+    const prevResult = results[prevIdx];
+    setIndex(prevIdx);
+
+    if (prevResult) {
+      setShowAAsA(prevResult.showAAsA);
+      setChoice(displayChoice(prevResult.preferred, prevResult.showAAsA));
+      setRationale(prevResult.rationale);
+    } else {
+      setShowAAsA(true);
+      setChoice(null);
+      setRationale("");
+    }
+  }
 
   useEffect(() => {
     function handleKey(e: KeyboardEvent) {
@@ -79,66 +152,48 @@ export default function Annotate({ annotatorId, onShowStats, onLogout }: Props) 
     return () => window.removeEventListener("keydown", handleKey);
   }, []);
 
-  async function handleSubmit() {
-    if (!pair || !choice || submitting) return;
-    setSubmitting(true);
-
-    // Why: Map the displayed label back to the actual response field.
-    // If response_a was shown as "B" and the user picked "B", they preferred response_a.
-    let preferred: string;
-    if (choice === "tie") {
-      preferred = "tie";
-    } else if (choice === "A") {
-      preferred = showAAsA ? "response_a" : "response_b";
-    } else {
-      preferred = showAAsA ? "response_b" : "response_a";
-    }
-
-    await submitAnnotation({
-      pair_id: pair.id,
-      annotator_id: annotatorId,
-      preferred,
-      rationale: rationale.trim() || null,
-      response_a_shown_as: showAAsA ? "A" : "B",
-    });
-
-    setHistory((h) => [...h, pair.id]);
-    setSubmitting(false);
-    loadNext();
-  }
-
   if (loading) return <div className={styles.loading}>Loading...</div>;
 
+  const total = pairs.length;
+  const completed = results.filter((r) => r !== null).length;
   const progress = total > 0 ? (completed / total) * 100 : 0;
-  const leftText = showAAsA ? pair?.response_a : pair?.response_b;
-  const rightText = showAAsA ? pair?.response_b : pair?.response_a;
 
-  if (!pair) {
+  if (index >= total) {
     return (
       <div className={styles.done}>
         <h2 className={styles.doneTitle}>All pairs annotated</h2>
         <p>You've completed all {total} pairs. Thank you!</p>
-        <button className={styles.navButton} onClick={onShowStats} style={{ marginTop: "1rem" }}>
-          View Stats
-        </button>
+        <div className={styles.doneActions}>
+          {total > 0 && (
+            <button className={styles.navButton} onClick={handleBack}>
+              &#8592; Review Answers
+            </button>
+          )}
+          <button className={styles.navButton} onClick={onShowStats}>
+            View Stats
+          </button>
+        </div>
       </div>
     );
   }
+
+  const pair = pairs[index];
+  const leftText = showAAsA ? pair.response_a : pair.response_b;
+  const rightText = showAAsA ? pair.response_b : pair.response_a;
 
   return (
     <div>
       <div className={styles.header}>
         <span className={styles.annotator}>Annotator: {annotatorId}</span>
         <div className={styles.nav}>
-          <button className={styles.navButton} onClick={goBack} disabled={history.length === 0} title="Go back to previous pair">
-            &#8592; Back
-          </button>
           <button className={styles.navButton} onClick={onShowStats}>Stats</button>
           <button className={styles.navButton} onClick={onLogout}>Logout</button>
         </div>
       </div>
 
-      <div className={styles.progressLabel}>{completed} of {total} completed</div>
+      <div className={styles.progressLabel}>
+        Question {index + 1} of {total}
+      </div>
       <div className={styles.progressBar}>
         <div className={styles.progressFill} style={{ width: `${progress}%` }} />
       </div>
@@ -192,19 +247,20 @@ export default function Annotate({ annotatorId, onShowStats, onLogout }: Props) 
       />
 
       <div className={styles.submitRow}>
-        {viewingHistory ? (
-          <button className={styles.submitBtn} onClick={loadNext}>
-            Next &#8594;
-          </button>
-        ) : (
-          <button
-            className={styles.submitBtn}
-            disabled={!choice || submitting}
-            onClick={handleSubmit}
-          >
-            {submitting ? "Submitting..." : "Submit"}
-          </button>
-        )}
+        <button
+          className={styles.navButton}
+          disabled={index <= 0}
+          onClick={handleBack}
+        >
+          &#8592; Back
+        </button>
+        <button
+          className={styles.submitBtn}
+          disabled={!choice}
+          onClick={handleNext}
+        >
+          {index < total - 1 ? "Next" : "Finish"}
+        </button>
       </div>
     </div>
   );
