@@ -2,6 +2,7 @@
 
 A full-stack human annotation tool for pairwise LLM response preference comparison. This mirrors what real RLHF (Reinforcement Learning from Human Feedback) data collection systems do — given a prompt and two model responses, a human annotator chooses which response is better, producing the preference pairs that train reward models.
 
+> **Part of a two-repo project.** This repo is the *human interface* for collecting preferences. The companion repo [rlhf-pipeline](https://github.com/rxue-dev/rlhf-pipeline) processes exported annotations into training-ready format — filtering, reformatting, and producing JSONL compatible with TRL's RewardTrainer.
 
 ## DEMO
 <img width="1211" height="798" alt="Screenshot 2026-05-22 at 12 44 01 PM" src="https://github.com/user-attachments/assets/7a81f0f8-b0a0-4852-9dde-5e573e4d8e81" />
@@ -68,6 +69,16 @@ npm run dev
 ```
 
 The frontend runs on `http://localhost:5173`. Open it in your browser, enter an annotator name, and start labeling.
+
+## Testing
+
+```bash
+cd backend
+pip install pytest
+python -m pytest tests/ -v
+```
+
+Tests cover the queue logic — least-annotated-first ordering and per-annotator deduplication — using an in-memory SQLite database with no server required.
 
 ## Key Design Decisions
 
